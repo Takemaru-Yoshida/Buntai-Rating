@@ -93,16 +93,19 @@ def run_step_parse(corpus: Dict, log=print) -> Dict:
 
     parsed: Dict[int, Dict[int, str]] = load("parsed.pkl") or {}
 
-    # キャッシュが空（全作家分が空）なら破棄して再解析
-    if parsed and all(len(v) == 0 for v in parsed.values()):
-        log("  WARNING: parsed.pkl が空のため削除して再解析します")
+    # キャッシュに有効なテキストがなければ破棄して再解析
+    def _has_valid_text(d: dict) -> bool:
+        return any(v and v.strip() for v in d.values())
+
+    if parsed and not any(_has_valid_text(v) for v in parsed.values()):
+        log("  WARNING: parsed.pkl に有効テキストがないため削除して再解析します")
         p = cache_path("parsed.pkl")
         if os.path.exists(p):
             os.remove(p)
         parsed = {}
 
     for idx, works in corpus.items():
-        if idx in parsed and parsed[idx]:
+        if idx in parsed and _has_valid_text(parsed[idx]):
             continue
         parsed[idx] = {}
         for work_idx, text in works.items():
@@ -115,7 +118,7 @@ def run_step_parse(corpus: Dict, log=print) -> Dict:
         log(f"  作家 {idx} 解析完了 ({len(parsed[idx])} 作品)")
     save(parsed, "parsed.pkl")
 
-    total = sum(len(v) for v in parsed.values())
+    total = sum(1 for v in parsed.values() for t in v.values() if t and t.strip())
     if total == 0:
         raise RuntimeError(
             "形態素解析の結果がすべて空です。MeCab/fugashi の設定を確認してください。"
