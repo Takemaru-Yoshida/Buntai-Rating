@@ -40,15 +40,30 @@ def lemmatize(text: str) -> str:
     lemmaが*の場合は表層形を使用。
     TF-IDF や語彙分析に利用。
     """
-    tagger = _get_full()
-    tokens: List[str] = []
-    for word in tagger(text):
-        parts = word.feature.split(",")
-        if len(parts) > 6 and parts[6] != "*":
-            tokens.append(parts[6])
-        elif word.surface:
-            tokens.append(word.surface)
-    return " ".join(tokens)
+    if not text or not text.strip():
+        return ""
+    try:
+        tagger = _get_full()
+        tokens: List[str] = []
+        for word in tagger(text):
+            if not word.surface:
+                continue
+            try:
+                parts = str(word.feature).split(",")
+                if len(parts) > 6 and parts[6] not in ("", "*"):
+                    tokens.append(parts[6])
+                else:
+                    tokens.append(word.surface)
+            except Exception:
+                tokens.append(word.surface)
+        if tokens:
+            return " ".join(tokens)
+    except Exception:
+        pass
+    try:
+        return _get_wakati()(text).strip()
+    except Exception:
+        return ""
 
 
 def parse_pos(text: str) -> List[Tuple[str, str]]:

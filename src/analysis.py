@@ -27,7 +27,14 @@ def build_tfidf_dataset(
     author_ids = [k for k, v in dic.items() for _ in v.values()]
     bodies = [vv for v in dic.values() for vv in v.values()]
 
-    df = pd.DataFrame({"author": author_ids, "body": bodies})
+    valid = [(a, b) for a, b in zip(author_ids, bodies) if b and b.strip()]
+    if not valid:
+        raise ValueError(
+            "解析済みテキストが空です。parsed.pkl を削除して再セットアップしてください。"
+        )
+    author_ids_f, bodies_f = zip(*valid)
+
+    df = pd.DataFrame({"author": list(author_ids_f), "body": list(bodies_f)})
     vec = TfidfVectorizer(max_features=max_features, norm="l2")
     X = vec.fit_transform(df["body"].values)
     df_vec = pd.concat(
