@@ -4,18 +4,8 @@ import re
 import io
 import requests
 from bs4 import BeautifulSoup
-import MeCab
 
-
-_tagger = None
-
-
-def _get_tagger() -> MeCab.Tagger:
-    global _tagger
-    if _tagger is None:
-        _tagger = MeCab.Tagger("-Owakati")
-        _tagger.parse("")
-    return _tagger
+from src.mecab_util import lemmatize
 
 
 def extractbody(text: str) -> str:
@@ -35,18 +25,8 @@ def extractbody(text: str) -> str:
 
 
 def parsetext(text: str) -> str:
-    """MeCabで形態素解析し、原形スペース区切りを返す"""
-    tagger = _get_tagger()
-    node = tagger.parseToNode(text)
-    tokens = []
-    while node:
-        parts = node.feature.split(",")
-        if len(parts) > 6 and parts[6] != "*":
-            tokens.append(parts[6])
-        elif node.surface:
-            tokens.append(node.surface)
-        node = node.next
-    return " ".join(tokens)
+    """形態素解析して原形の空白区切りを返す（TF-IDF用）"""
+    return lemmatize(text)
 
 
 def fetch_from_url(url: str) -> str:
@@ -79,7 +59,8 @@ def extract_from_pdf(file_bytes: bytes) -> str:
 def extract_from_docx(file_bytes: bytes) -> str:
     """DOCXバイト列からテキストを抽出する"""
     import docx2txt
-    import tempfile, os
+    import tempfile
+    import os
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name

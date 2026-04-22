@@ -1,0 +1,16 @@
+[server]
+# Streamlit Community Cloud 向け設定
+# 長時間の初回セットアップ処理がタイムアウトしないように延長
+maxUploadSize = 50          # アップロード上限 MB
+enableCORS = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#2c3e50"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#2c3e50"
+font = "sans serif"

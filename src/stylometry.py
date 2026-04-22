@@ -3,18 +3,8 @@
 import re
 import unicodedata
 from typing import Dict
-import MeCab
 
-
-_tagger = None
-
-
-def _get_tagger() -> MeCab.Tagger:
-    global _tagger
-    if _tagger is None:
-        _tagger = MeCab.Tagger("")
-        _tagger.parse("")
-    return _tagger
+from src.mecab_util import wakati, parse_pos
 
 
 def _is_kanji(ch: str) -> bool:
@@ -68,32 +58,24 @@ def extract_stylometric_features(text: str) -> Dict[str, float]:
     # 句読点
     punct_count = len(re.findall(r"[、。！？・…]", text))
     touten_count = len(re.findall(r"、", text))
+    avg_clauses_per_sent = touten_count / len(sentences) if sentences else 0.0
 
-    avg_clauses_per_sent = (
-        touten_count / len(sentences) if sentences else 0.0
-    )
-
-    # 形態素解析
-    tagger = _get_tagger()
-    node = tagger.parseToNode(text)
-    words = []
-    pos_counts: Dict[str, int] = {}
-    while node:
-        if node.surface:
-            words.append(node.surface)
-            pos = node.feature.split(",")[0]
-            pos_counts[pos] = pos_counts.get(pos, 0) + 1
-        node = node.next
-
+    # 分かち書きで語の統計
+    wakati_text = wakati(text)
+    words = [w for w in wakati_text.split() if w]
     word_count = len(words)
-    avg_word_len = (
-        sum(len(w) for w in words) / word_count if word_count else 0.0
-    )
-    unique_words = len(set(words))
-    lexical_diversity = unique_words / word_count if word_count else 0.0
+    avg_word_len = sum(len(w) for w in words) / word_count if word_count else 0.0
+    lexical_diversity = len(set(words)) / word_count if word_count else 0.0
+
+    # 品詞比率
+    pos_pairs = parse_pos(text)
+    pos_counts: Dict[str, int] = {}
+    for _, pos in pos_pairs:
+        pos_counts[pos] = pos_counts.get(pos, 0) + 1
+    total_pos = sum(pos_counts.values()) or 1
 
     def pos_ratio(pos_name: str) -> float:
-        return pos_counts.get(pos_name, 0) / word_count if word_count else 0.0
+        return pos_counts.get(pos_name, 0) / total_pos
 
     return {
         "kanji_ratio": kanji_count / total_chars,
