@@ -1,9 +1,10 @@
 """埋め込みモデルとコサイン類似度評価モジュール
 
-使用モデル: sonoisa/sentence-bert-base-ja-mean-tokens-v2
-  - 日本語SentenceBERT (v2) - 日本語文類似度に特化して訓練済み
-  - cl-tohoku/bert-base-japanese-whole-word-masking + 手動 mean pooling より
-    文レベル表現の精度が高い
+使用モデル: cl-nagoya/sup-simcse-ja-base
+  - Supervised SimCSE（対照学習）で日本語NLIデータをファインチューニング
+  - sonoisa/sentence-bert-base-ja-mean-tokens-v2 は新しい sentence-transformers と
+    BertJapaneseTokenizer の do_lower_case 属性非互換があるため、
+    こちらを採用（標準 SentenceTransformer API と完全互換）
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 
-MODEL_NAME = "sonoisa/sentence-bert-base-ja-mean-tokens-v2"
+MODEL_NAME = "cl-nagoya/sup-simcse-ja-base"
 _model: SentenceTransformer | None = None
 
 
