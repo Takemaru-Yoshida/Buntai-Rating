@@ -173,7 +173,7 @@ def _stylo_compare_chart(input_feat, author_mean, author_name):
 
 # ── メインアプリ ──────────────────────────────────────────────────────────────
 
-def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache):
+def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec):
 
     st.title("📖 文豪文体評価アプリ")
     st.markdown(
@@ -291,11 +291,13 @@ def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache):
                                 use_container_width=True)
                 common = [k for k in all_keys if k in input_feat and k in author_mean]
                 if common:
-                    dist = np.linalg.norm(
-                        np.array([input_feat[k] for k in common])
-                        - np.array([author_mean[k] for k in common])
-                    )
-                    st.info(f"文体特徴ユークリッド距離 ({selected_author}): {dist:.4f}")
+                    a = np.array([input_feat[k] for k in common])
+                    b = np.array([author_mean[k] for k in common])
+                    dist = np.linalg.norm(a - b)
+                    cos_sim = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+                    col_d, col_c = st.columns(2)
+                    col_d.metric("ユークリッド距離（小さいほど近い）", f"{dist:.4f}")
+                    col_c.metric("コサイン類似度（大きいほど近い）", f"{cos_sim:.4f}")
 
     # Tab 3: コーパス可視化
     with tab3:
@@ -315,7 +317,11 @@ def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache):
                 plt.close(fig_pca)
 
             st.subheader("TF-IDF 特徴量重要度")
-            feature_names_list = [str(c) for c in df_vec_tfidf.columns if c != "author"]
+            feature_names_list = (
+                list(tfidf_vec.get_feature_names_out())
+                if tfidf_vec is not None
+                else [str(c) for c in df_vec_tfidf.columns if c != "author"]
+            )
             fig_imp = plot_feature_importance(lgbm_model, feature_names_list, top_n=30)
             st.pyplot(fig_imp)
             plt.close(fig_imp)
@@ -371,5 +377,5 @@ if not cache.is_setup_complete():
     _run_setup_ui()
 else:
     with st.spinner("データを読み込んでいます..."):
-        author_vecs, df_vec_tfidf, lgbm_model, stylo_cache = _load_data_from_disk()
-    _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache)
+        author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec = _load_data_from_disk()
+    _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec)
