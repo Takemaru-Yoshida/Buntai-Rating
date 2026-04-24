@@ -28,6 +28,10 @@ _model = None
 def _get_model():
     global _tokenizer, _model
     if _model is None:
+        # BertJapaneseTokenizer は内部で fugashi.Tagger を呼ぶが、
+        # ipadic は GenericTagger でないと動作しないため事前にパッチする。
+        import fugashi
+        fugashi.Tagger = fugashi.GenericTagger
         from transformers import AutoTokenizer, AutoModel
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
         _model = AutoModel.from_pretrained(MODEL_NAME)
