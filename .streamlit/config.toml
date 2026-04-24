@@ -2,9 +2,6 @@
 maxUploadSize = 50
 enableCORS = false
 fileWatcherType = "none"
-# macOS Python 3.13 でブラウザ自動起動時に segfault が発生するため headless に設定
-# アプリは http://localhost:8501 で手動アクセス
-headless = true
 
 [browser]
 gatherUsageStats = false

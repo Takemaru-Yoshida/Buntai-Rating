@@ -14,24 +14,27 @@ from scipy.stats import norm
 from decimal import Decimal, ROUND_HALF_UP
 
 import numpy as np
-from sentence_transformers import SentenceTransformer, util
 
 MODEL_NAME = "cl-nagoya/sup-simcse-ja-base"
-_model: SentenceTransformer | None = None
+_model = None
 
 
-def get_model() -> SentenceTransformer:
-    """モデルをシングルトンで返す（初回のみダウンロード）"""
+def get_model():
+    """モデルをシングルトンで返す（初回のみダウンロード）。
+    sentence_transformers は起動時ではなく初回呼び出し時にインポートする。
+    トップレベルで import すると transformers 経由で torchvision が要求され
+    segfault の原因になるため遅延インポートしている。
+    """
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer(MODEL_NAME)
     return _model
 
 
 def encode_texts(texts: List[str], batch_size: int = 32, show_progress: bool = False) -> np.ndarray:
     """テキストリストをエンコードしてndarrayを返す"""
-    model = get_model()
-    return model.encode(
+    return get_model().encode(
         texts,
         batch_size=batch_size,
         show_progress_bar=show_progress,
@@ -41,8 +44,7 @@ def encode_texts(texts: List[str], batch_size: int = 32, show_progress: bool = F
 
 def encode_single(text: str) -> np.ndarray:
     """1件テキストをエンコードして1次元ndarrayを返す"""
-    model = get_model()
-    return model.encode(text, convert_to_numpy=True)
+    return get_model().encode(text, convert_to_numpy=True)
 
 
 def build_author_embedding_db(
@@ -59,13 +61,12 @@ def build_author_embedding_db(
     result: Dict[int, np.ndarray] = {}
     for author_idx, works in dic.items():
         texts = list(works.values())
-        vecs = model.encode(
+        result[author_idx] = model.encode(
             texts,
             batch_size=batch_size,
             show_progress_bar=show_progress,
             convert_to_numpy=True,
         )
-        result[author_idx] = vecs
     return result
 
 
@@ -78,6 +79,8 @@ def calculate_similarity(
     クエリembeddingと各作家embeddingのコサイン類似度を計算。
     Returns: (sim_mean, sim_max) — 各長さ n_authors のリスト (正規化済スコア 0-1)
     """
+    from sentence_transformers import util
+
     raw_mean: List[float] = []
     raw_max: List[float] = []
     all_sims: List[float] = []
@@ -89,7 +92,6 @@ def calculate_similarity(
         raw_max.append(max(sims))
         all_sims.extend(sims)
 
-    # 正規化: 標準正規分布のCDFで0-1にマッピング
     mu_mean, std_mean = mean(raw_mean), stdev(raw_mean)
     mu_all, std_all = mean(all_sims), stdev(all_sims)
 
