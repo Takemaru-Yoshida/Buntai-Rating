@@ -1,12 +1,13 @@
 """
 データキャッシュ管理モジュール
 
-キャッシュ保存先（優先順位）:
-  1. /tmp/buntai_cache/  ← Streamlit Community Cloud のエフェメラルストレージ
-  2. ./data/             ← ローカル開発時
+読み込み優先順位:
+  1. ./data/             ← リポジトリにコミットされた事前ビルド済みファイル
+  2. /tmp/buntai_cache/  ← セットアップ実行時の書き込み先（Streamlit Cloud 等）
+  3. ./data/             ← ローカル開発時の書き込み先（/tmp が使えない場合）
 
-各処理ステップの結果を個別に pickle 保存するため、
-途中で中断しても再起動時に続きから再開できる。
+Streamlit Community Cloud では data/ にコミット済みファイルがあれば
+セットアップをスキップして即座にアプリを起動する。
 """
 
 from __future__ import annotations
@@ -16,21 +17,26 @@ import pickle
 import time
 from typing import Any, Dict, Optional
 
-# Streamlit Cloud では /tmp が書き込み可能
-# ローカルでは data/ を使う
-_CACHE_CANDIDATES = ["/tmp/buntai_cache", os.path.join(os.path.dirname(__file__), "..", "data")]
+# data/ ディレクトリ（リポジトリ内、事前ビルド済みファイルの置き場）
+DATA_DIR: str = os.path.join(os.path.dirname(__file__), "..", "data")
 
+# 書き込み先（Streamlit Cloud では /tmp、ローカルでは data/）
 CACHE_DIR: str = os.environ.get(
     "BUNTAI_CACHE_DIR",
-    _CACHE_CANDIDATES[0] if os.access("/tmp", os.W_OK) else _CACHE_CANDIDATES[1],
+    "/tmp/buntai_cache" if os.access("/tmp", os.W_OK) else DATA_DIR,
 )
 
 REQUIRED_FILES = [
     "author_vecs.pkl",
     "df_vec_tfidf.pkl",
     "lgbm_tfidf.pkl",
+    "tfidf.pkl",
     "stylometry.pkl",
 ]
+
+
+def data_path(filename: str) -> str:
+    return os.path.join(DATA_DIR, filename)
 
 
 def cache_path(filename: str) -> str:
@@ -38,7 +44,8 @@ def cache_path(filename: str) -> str:
 
 
 def is_step_done(filename: str) -> bool:
-    return os.path.exists(cache_path(filename))
+    """data/ または CACHE_DIR にファイルが存在するか確認する"""
+    return os.path.exists(data_path(filename)) or os.path.exists(cache_path(filename))
 
 
 def is_setup_complete() -> bool:
@@ -52,11 +59,12 @@ def save(obj: Any, filename: str) -> None:
 
 
 def load(filename: str) -> Optional[Any]:
-    p = cache_path(filename)
-    if not os.path.exists(p):
-        return None
-    with open(p, "rb") as f:
-        return pickle.load(f)
+    """data/ を優先して読み込む（事前ビルド済みファイルが存在する場合）"""
+    for path in [data_path(filename), cache_path(filename)]:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return pickle.load(f)
+    return None
 
 
 # ── セットアップ処理（各ステップ）────────────────────────────────────────────
@@ -93,7 +101,6 @@ def run_step_parse(corpus: Dict, log=print) -> Dict:
 
     parsed: Dict[int, Dict[int, str]] = load("parsed.pkl") or {}
 
-    # キャッシュに有効なテキストがなければ破棄して再解析
     def _has_valid_text(d: dict) -> bool:
         return any(v and v.strip() for v in d.values())
 

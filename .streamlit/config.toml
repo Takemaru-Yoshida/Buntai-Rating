@@ -1,8 +1,7 @@
 [server]
-# Streamlit Community Cloud 向け設定
-# 長時間の初回セットアップ処理がタイムアウトしないように延長
-maxUploadSize = 50          # アップロード上限 MB
+maxUploadSize = 50
 enableCORS = false
+fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false

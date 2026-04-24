@@ -294,10 +294,7 @@ def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec):
                     a = np.array([input_feat[k] for k in common])
                     b = np.array([author_mean[k] for k in common])
                     dist = np.linalg.norm(a - b)
-                    cos_sim = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
-                    col_d, col_c = st.columns(2)
-                    col_d.metric("ユークリッド距離（小さいほど近い）", f"{dist:.4f}")
-                    col_c.metric("コサイン類似度（大きいほど近い）", f"{cos_sim:.4f}")
+                    st.metric("ユークリッド距離（小さいほど近い）", f"{dist:.4f}")
 
     # Tab 3: コーパス可視化
     with tab3:
