@@ -95,6 +95,14 @@ def extract_stylometric_features(text: str) -> Dict[str, float]:
     }
 
 
+# 値が 0〜1 に正規化されている特徴量（棒グラフ表示対象）
+# avg_sentence_len / avg_word_len / avg_clauses_per_sent は値域が大きいため除外
+RATIO_FEATURE_KEYS = frozenset({
+    "kanji_ratio", "hiragana_ratio", "katakana_ratio",
+    "lexical_diversity", "punctuation_density",
+    "noun_ratio", "verb_ratio", "adjective_ratio", "adverb_ratio", "particle_ratio",
+})
+
 FEATURE_LABELS_JA = {
     "kanji_ratio": "漢字率",
     "hiragana_ratio": "ひらがな率",

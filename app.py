@@ -27,7 +27,7 @@ from src.text_processing import (
     extract_from_txt,
 )
 from src.embedding import encode_single, calculate_similarity, score_to_point
-from src.stylometry import extract_stylometric_features, FEATURE_LABELS_JA
+from src.stylometry import extract_stylometric_features, FEATURE_LABELS_JA, RATIO_FEATURE_KEYS
 from src.analysis import scatter_2d, plot_feature_importance
 import src.cache as cache
 
@@ -158,7 +158,7 @@ def _bar_chart(scores, labels, title):
 
 
 def _stylo_compare_chart(input_feat, author_mean, author_name):
-    keys = [k for k in FEATURE_LABELS_JA if k in input_feat and k in author_mean]
+    keys = [k for k in FEATURE_LABELS_JA if k in RATIO_FEATURE_KEYS and k in input_feat and k in author_mean]
     labels = [FEATURE_LABELS_JA[k] for k in keys]
     fig = go.Figure()
     fig.add_trace(go.Bar(name="入力テキスト", x=labels,
@@ -287,6 +287,20 @@ def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec, viz
                     k: mean(f[k] for f in works_feats if k in f)
                     for k in all_keys if any(k in f for f in works_feats)
                 }
+
+                # 選択作家の各指標をドロップダウン直下に表示
+                st.markdown(f"**{selected_author}** の平均文体特徴")
+                char_counts = [f.get("char_count", 0) for f in works_feats if "char_count" in f]
+                ac1, ac2, ac3 = st.columns(3)
+                for i, k in enumerate(all_keys):
+                    if k in author_mean:
+                        label = FEATURE_LABELS_JA[k]
+                        val = author_mean[k]
+                        fmt = f"{val:.1f}" if k in ("avg_sentence_len", "avg_word_len", "avg_clauses_per_sent") else f"{val:.4f}"
+                        [ac1, ac2, ac3][i % 3].metric(label, fmt)
+                if char_counts:
+                    st.markdown(f"平均総文字数: **{int(mean(char_counts)):,}** 文字")
+
                 st.plotly_chart(_stylo_compare_chart(input_feat, author_mean, selected_author),
                                 use_container_width=True)
                 common = [k for k in all_keys if k in input_feat and k in author_mean]
