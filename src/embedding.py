@@ -1,50 +1,78 @@
 """埋め込みモデルとコサイン類似度評価モジュール
 
 使用モデル: cl-nagoya/sup-simcse-ja-base
-  - Supervised SimCSE（対照学習）で日本語NLIデータをファインチューニング
-  - sonoisa/sentence-bert-base-ja-mean-tokens-v2 は新しい sentence-transformers と
-    BertJapaneseTokenizer の do_lower_case 属性非互換があるため、
-    こちらを採用（標準 SentenceTransformer API と完全互換）
+  - Supervised SimCSE（対照学習）で日本語NLIデータをファインチューニング済み
+
+実装上の注意:
+  新しい sentence-transformers は BertJapaneseTokenizer の do_lower_case プロパティの
+  setter 非互換により日本語BERTモデルのロードに失敗する（Python 3.13/3.14 + 最新版で確認）。
+  そのため SentenceTransformer クラスを使わず transformers を直接使って
+  mean-pooling + L2 正規化で同等の embedding を計算する。
+  また transformers のトップレベルインポートは Streamlit 起動時の
+  モジュールスキャンが torchvision を要求して segfault を起こすため遅延インポートする。
 """
 
 from __future__ import annotations
 from typing import Dict, List, Tuple
 from statistics import mean, stdev
-from scipy.stats import norm
 from decimal import Decimal, ROUND_HALF_UP
 
 import numpy as np
+from scipy.stats import norm
 
 MODEL_NAME = "cl-nagoya/sup-simcse-ja-base"
+_tokenizer = None
 _model = None
 
 
-def get_model():
-    """モデルをシングルトンで返す（初回のみダウンロード）。
-    sentence_transformers は起動時ではなく初回呼び出し時にインポートする。
-    トップレベルで import すると transformers 経由で torchvision が要求され
-    segfault の原因になるため遅延インポートしている。
-    """
-    global _model
+def _get_model():
+    global _tokenizer, _model
     if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(MODEL_NAME)
-    return _model
+        from transformers import AutoTokenizer, AutoModel
+        _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        _model = AutoModel.from_pretrained(MODEL_NAME)
+        _model.eval()
+    return _tokenizer, _model
 
 
-def encode_texts(texts: List[str], batch_size: int = 32, show_progress: bool = False) -> np.ndarray:
-    """テキストリストをエンコードしてndarrayを返す"""
-    return get_model().encode(
-        texts,
-        batch_size=batch_size,
-        show_progress_bar=show_progress,
-        convert_to_numpy=True,
-    )
+def _mean_pooling(last_hidden_state, attention_mask):
+    import torch
+    mask = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+    return torch.sum(last_hidden_state * mask, 1) / torch.clamp(mask.sum(1), min=1e-9)
+
+
+def encode_texts(
+    texts: List[str],
+    batch_size: int = 32,
+    show_progress: bool = False,
+) -> np.ndarray:
+    """テキストリストをエンコードして (N, dim) ndarray を返す"""
+    import torch
+    import torch.nn.functional as F
+
+    tokenizer, model = _get_model()
+    all_vecs: List[np.ndarray] = []
+    indices = range(0, len(texts), batch_size)
+    if show_progress:
+        from tqdm import tqdm
+        indices = tqdm(indices, desc="encoding")
+    for i in indices:
+        batch = texts[i: i + batch_size]
+        encoded = tokenizer(
+            batch, padding=True, truncation=True,
+            max_length=512, return_tensors="pt",
+        )
+        with torch.no_grad():
+            output = model(**encoded)
+        vecs = _mean_pooling(output.last_hidden_state, encoded["attention_mask"])
+        vecs = F.normalize(vecs, p=2, dim=1)
+        all_vecs.append(vecs.cpu().numpy())
+    return np.vstack(all_vecs)
 
 
 def encode_single(text: str) -> np.ndarray:
-    """1件テキストをエンコードして1次元ndarrayを返す"""
-    return get_model().encode(text, convert_to_numpy=True)
+    """1件テキストをエンコードして1次元 ndarray を返す"""
+    return encode_texts([text], batch_size=1)[0]
 
 
 def build_author_embedding_db(
@@ -53,20 +81,15 @@ def build_author_embedding_db(
     show_progress: bool = True,
 ) -> Dict[int, np.ndarray]:
     """
-    全作家・作品のembeddingを計算して返す。
+    全作家・作品の embedding を計算して返す。
     dic: {author_idx: {work_idx: raw_text}}
     Returns: {author_idx: ndarray of shape (n_works, dim)}
     """
-    model = get_model()
+    _get_model()
     result: Dict[int, np.ndarray] = {}
     for author_idx, works in dic.items():
         texts = list(works.values())
-        result[author_idx] = model.encode(
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=show_progress,
-            convert_to_numpy=True,
-        )
+        result[author_idx] = encode_texts(texts, batch_size=batch_size, show_progress=show_progress)
     return result
 
 
@@ -76,18 +99,19 @@ def calculate_similarity(
     n_authors: int = 15,
 ) -> Tuple[List[float], List[float]]:
     """
-    クエリembeddingと各作家embeddingのコサイン類似度を計算。
+    クエリ embedding と各作家 embedding のコサイン類似度を計算。
     Returns: (sim_mean, sim_max) — 各長さ n_authors のリスト (正規化済スコア 0-1)
     """
-    from sentence_transformers import util
-
     raw_mean: List[float] = []
     raw_max: List[float] = []
     all_sims: List[float] = []
 
     for idx in range(n_authors):
         vecs = author_vecs[idx]
-        sims = [float(util.cos_sim(query_vec, v)) for v in vecs]
+        sims = [
+            float(np.dot(query_vec, v) / (np.linalg.norm(query_vec) * np.linalg.norm(v) + 1e-9))
+            for v in vecs
+        ]
         raw_mean.append(mean(sims))
         raw_max.append(max(sims))
         all_sims.extend(sims)
@@ -102,5 +126,5 @@ def calculate_similarity(
 
 
 def score_to_point(score: float) -> int:
-    """0-1スコアを0-100点整数に変換"""
+    """0-1 スコアを 0-100 点整数に変換"""
     return int(Decimal(str(score * 100)).quantize(Decimal("0"), ROUND_HALF_UP))
