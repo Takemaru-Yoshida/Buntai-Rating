@@ -28,7 +28,7 @@ from src.text_processing import (
 )
 from src.embedding import encode_single, calculate_similarity, score_to_point
 from src.stylometry import extract_stylometric_features, FEATURE_LABELS_JA
-from src.analysis import plot_umap, plot_pca, plot_feature_importance
+from src.analysis import scatter_2d, plot_feature_importance
 import src.cache as cache
 
 AUTHOR_NAMES = list(authors_label.keys())
@@ -173,7 +173,7 @@ def _stylo_compare_chart(input_feat, author_mean, author_name):
 
 # ── メインアプリ ──────────────────────────────────────────────────────────────
 
-def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec):
+def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec, viz):
 
     st.title("📖 文豪文体評価アプリ")
     st.markdown(
@@ -299,40 +299,37 @@ def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec):
     # Tab 3: コーパス可視化
     with tab3:
         st.subheader("コーパスの分布可視化")
-        if df_vec_tfidf is not None and lgbm_model is not None:
-            X_all = df_vec_tfidf.drop(columns=["author"]).values
-            y_all = df_vec_tfidf["author"].values
+        if viz is not None:
             col_a, col_b = st.columns(2)
             with col_a:
-                with st.spinner("UMAP を計算中..."):
-                    fig_umap = plot_umap(X_all, y_all, AUTHOR_NAMES, title="TF-IDF UMAP")
+                fig_umap = scatter_2d(
+                    viz["tfidf_umap"], viz["tfidf_labels"], AUTHOR_NAMES, "TF-IDF UMAP"
+                )
                 st.pyplot(fig_umap)
                 plt.close(fig_umap)
             with col_b:
-                fig_pca = plot_pca(X_all, y_all, AUTHOR_NAMES, title="TF-IDF PCA")
+                fig_pca = scatter_2d(
+                    viz["tfidf_pca"], viz["tfidf_labels"], AUTHOR_NAMES,
+                    "TF-IDF PCA", viz["tfidf_pca_exp"]
+                )
                 st.pyplot(fig_pca)
                 plt.close(fig_pca)
 
-            st.subheader("TF-IDF 特徴量重要度")
-            feature_names_list = (
-                list(tfidf_vec.get_feature_names_out())
-                if tfidf_vec is not None
-                else [str(c) for c in df_vec_tfidf.columns if c != "author"]
-            )
-            fig_imp = plot_feature_importance(lgbm_model, feature_names_list, top_n=30)
-            st.pyplot(fig_imp)
-            plt.close(fig_imp)
+            if lgbm_model is not None:
+                st.subheader("TF-IDF 特徴量重要度")
+                feature_names_list = (
+                    list(tfidf_vec.get_feature_names_out())
+                    if tfidf_vec is not None
+                    else [str(c) for c in df_vec_tfidf.columns if c != "author"]
+                )
+                fig_imp = plot_feature_importance(lgbm_model, feature_names_list, top_n=30)
+                st.pyplot(fig_imp)
+                plt.close(fig_imp)
 
-        if author_vecs:
-            st.subheader("Sentence-BERT Embedding UMAP")
-            emb_list, label_list = [], []
-            for idx, vecs in author_vecs.items():
-                emb_list.append(vecs)
-                label_list.extend([idx] * len(vecs))
-            X_emb = np.vstack(emb_list)
-            y_emb = np.array(label_list)
-            with st.spinner("Embedding UMAP を計算中..."):
-                fig_emb = plot_umap(X_emb, y_emb, AUTHOR_NAMES, title="Sentence-BERT UMAP")
+            st.subheader("Embedding UMAP")
+            fig_emb = scatter_2d(
+                viz["emb_umap"], viz["emb_labels"], AUTHOR_NAMES, "multilingual-e5-base UMAP"
+            )
             st.pyplot(fig_emb)
             plt.close(fig_emb)
 
@@ -340,31 +337,33 @@ def _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec):
     with tab4:
         st.subheader("使用モデル・手法")
         st.markdown("""
-### Embeddingモデル
-**[sonoisa/sentence-bert-base-ja-mean-tokens-v2](https://huggingface.co/sonoisa/sentence-bert-base-ja-mean-tokens-v2)**
+### Embedding モデル
+**[intfloat/multilingual-e5-base](https://huggingface.co/intfloat/multilingual-e5-base)**
 
-日本語 SentenceBERT (v2)。日本語NLI/STSタスクでファインチューニングされており、
-従来の `cl-tohoku/bert-base-japanese-whole-word-masking` + 手動 mean-pooling より
-文体類似度の精度が高い。
+XLM-RoBERTa ベースの多言語埋め込みモデル（SentencePiece トークナイザー）。
+MeCab などの形態素解析器に依存せず、日本語を含む100言語以上に対応する。
+mean-pooling + L2 正規化により文書ベクトルを生成し、コサイン類似度で文体比較を行う。
 
-### MeCab ライブラリ
+### 形態素解析
 **[fugashi](https://github.com/polm/fugashi) + [ipadic](https://github.com/polm/ipadic-py)**
 
-システムの libmecab に依存しない純Python実装。Streamlit Community Cloud などの
-クラウド環境でも追加設定なしで動作する。
+TF-IDF および文体計量分析の前処理に使用。
+システムの libmecab に依存しない純 Python 実装で、
+Streamlit Community Cloud などのクラウド環境でも動作する。
 
 ### 分析手法
 
 | フェーズ | 手法 | 説明 |
 |----------|------|------|
-| 特徴分析 | TF-IDF (max 300語) | 作家ごとの頻出語彙を抽出 |
-| 分類モデル | LightGBM | TF-IDF特徴量による15クラス分類 |
-| 次元削減 | UMAP / PCA | コーパス分布の可視化 |
-| 類似度評価 | Sentence-BERT + コサイン類似度 | 入力テキストと各作家の作品ベクトルを比較 |
-| スタイロメトリー（追加） | 文体計量分析 | 漢字率・語彙豊富度・文長・品詞比率など |
+| 特徴抽出 | TF-IDF（最大300語） | 形態素解析後の原形で作家ごとの頻出語彙を抽出 |
+| 分類モデル | LightGBM | TF-IDF 特徴量による15クラス分類 |
+| 次元削減 | UMAP / PCA（事前計算済み） | コーパス分布の可視化（起動時に即表示） |
+| 類似度評価 | multilingual-e5-base + コサイン類似度 | 入力テキストと各作家の作品ベクトルを比較 |
+| スタイロメトリー | 文体計量分析 | 漢字率・語彙豊富度・文長・品詞比率など13指標 |
 
 ### スコア算出方法
-- 各作家の全作品との類似度を正規化（標準正規分布CDF）して 0〜100点に換算
+各作家の全作品との類似度を標準正規分布 CDF で正規化し 0〜100 点に換算。
+平均類似度スコア（全作品との平均）と最高類似度スコア（最も近い作品との類似度）を提供。
 """)
 
 
@@ -374,5 +373,5 @@ if not cache.is_setup_complete():
     _run_setup_ui()
 else:
     with st.spinner("データを読み込んでいます..."):
-        author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec = _load_data_from_disk()
-    _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec)
+        author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec, viz = _load_data_from_disk()
+    _main_app(author_vecs, df_vec_tfidf, lgbm_model, stylo_cache, tfidf_vec, viz)

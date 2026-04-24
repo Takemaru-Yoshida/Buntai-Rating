@@ -32,6 +32,7 @@ REQUIRED_FILES = [
     "lgbm_tfidf.pkl",
     "tfidf.pkl",
     "stylometry.pkl",
+    "viz.pkl",
 ]
 
 
@@ -177,6 +178,42 @@ def run_step_stylometry(corpus: Dict, log=print) -> Dict:
 
 # ── 全データ一括ロード ────────────────────────────────────────────────────────
 
+def run_step_viz(df_vec_tfidf, author_vecs: Dict, log=print) -> Dict:
+    """UMAP / PCA 座標を事前計算して保存する"""
+    import numpy as np
+    from src.analysis import compute_umap, compute_pca
+
+    X_tfidf = df_vec_tfidf.drop(columns=["author"]).values
+    y_tfidf = df_vec_tfidf["author"].values
+
+    log("  TF-IDF UMAP を計算中...")
+    tfidf_umap = compute_umap(X_tfidf)
+    log("  TF-IDF PCA を計算中...")
+    tfidf_pca, tfidf_pca_exp = compute_pca(X_tfidf)
+
+    emb_list, label_list = [], []
+    for idx, vecs in author_vecs.items():
+        emb_list.append(vecs)
+        label_list.extend([idx] * len(vecs))
+    X_emb = np.vstack(emb_list)
+    y_emb = np.array(label_list)
+
+    log("  Embedding UMAP を計算中...")
+    emb_umap = compute_umap(X_emb)
+
+    viz = {
+        "tfidf_umap": tfidf_umap,
+        "tfidf_pca": tfidf_pca,
+        "tfidf_pca_exp": tfidf_pca_exp,
+        "tfidf_labels": y_tfidf,
+        "emb_umap": emb_umap,
+        "emb_labels": y_emb,
+    }
+    save(viz, "viz.pkl")
+    log("  可視化データを保存しました")
+    return viz
+
+
 def load_all() -> tuple:
     """キャッシュからすべてのデータを読み込んで返す"""
     author_vecs = load("author_vecs.pkl")
@@ -184,4 +221,5 @@ def load_all() -> tuple:
     lgbm = load("lgbm_tfidf.pkl")
     stylo = load("stylometry.pkl")
     tfidf_vec = load("tfidf.pkl")
-    return author_vecs, df_vec, lgbm, stylo, tfidf_vec
+    viz = load("viz.pkl")
+    return author_vecs, df_vec, lgbm, stylo, tfidf_vec, viz

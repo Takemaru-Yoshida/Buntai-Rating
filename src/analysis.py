@@ -102,6 +102,38 @@ def plot_feature_importance(
     return fig
 
 
+def compute_umap(X: np.ndarray, random_state: int = 0) -> np.ndarray:
+    """UMAP で 2D 座標を計算して返す（事前計算用）"""
+    mapper = umap.UMAP(random_state=random_state)
+    return mapper.fit_transform(X)
+
+
+def compute_pca(X: np.ndarray) -> Tuple[np.ndarray, float]:
+    """PCA で 2D 座標と累積寄与率を返す（事前計算用）"""
+    pca = PCA(n_components=2)
+    X_r = pca.fit_transform(X)
+    return X_r, float(pca.explained_variance_ratio_.sum())
+
+
+def scatter_2d(
+    coords: np.ndarray,
+    y: np.ndarray,
+    author_names: List[str],
+    title: str,
+    explained: float | None = None,
+) -> plt.Figure:
+    """事前計算済み 2D 座標から散布図を返す"""
+    fig, ax = plt.subplots(figsize=(10, 8))
+    for label, name in enumerate(author_names):
+        mask = y == label
+        ax.scatter(coords[mask, 0], coords[mask, 1], label=name, alpha=0.7, s=20)
+    ax.legend(fontsize=7, loc="best")
+    full_title = f"{title} (explained: {explained:.1%})" if explained is not None else title
+    ax.set_title(full_title)
+    plt.tight_layout()
+    return fig
+
+
 def plot_umap(
     X: np.ndarray,
     y: np.ndarray,
@@ -109,18 +141,8 @@ def plot_umap(
     title: str = "UMAP",
     random_state: int = 0,
 ) -> plt.Figure:
-    """UMAP次元削減の2D散布図を返す"""
-    mapper = umap.UMAP(random_state=random_state)
-    embedding = mapper.fit_transform(X)
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    for label, name in enumerate(author_names):
-        mask = y == label
-        ax.scatter(embedding[mask, 0], embedding[mask, 1], label=name, alpha=0.7, s=20)
-    ax.legend(fontsize=7, loc="best")
-    ax.set_title(title)
-    plt.tight_layout()
-    return fig
+    """UMAP次元削減の2D散布図を返す（後方互換）"""
+    return scatter_2d(compute_umap(X, random_state), y, author_names, title)
 
 
 def plot_pca(
@@ -129,15 +151,6 @@ def plot_pca(
     author_names: List[str],
     title: str = "PCA",
 ) -> plt.Figure:
-    """PCA 2D散布図を返す"""
-    pca = PCA(n_components=2)
-    X_r = pca.fit_transform(X)
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    for label, name in enumerate(author_names):
-        mask = y == label
-        ax.scatter(X_r[mask, 0], X_r[mask, 1], label=name, alpha=0.7, s=20)
-    ax.legend(fontsize=7, loc="best")
-    ax.set_title(f"{title} (explained: {pca.explained_variance_ratio_.sum():.1%})")
-    plt.tight_layout()
-    return fig
+    """PCA 2D散布図を返す（後方互換）"""
+    X_r, explained = compute_pca(X)
+    return scatter_2d(X_r, y, author_names, title, explained)
