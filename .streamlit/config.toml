@@ -1,8 +1,9 @@
 [server]
-# Streamlit Community Cloud 向け設定
-# 長時間の初回セットアップ処理がタイムアウトしないように延長
-maxUploadSize = 50          # アップロード上限 MB
+maxUploadSize = 50
 enableCORS = false
+# transformers が torchvision を遅延インポートするため watcher を無効化
+# 無効化しないと ModuleNotFoundError → segfault が発生する
+fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false
