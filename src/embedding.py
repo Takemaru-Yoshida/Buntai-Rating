@@ -1,15 +1,13 @@
 """埋め込みモデルとコサイン類似度評価モジュール
 
-使用モデル: cl-nagoya/sup-simcse-ja-base
-  - Supervised SimCSE（対照学習）で日本語NLIデータをファインチューニング済み
+使用モデル: intfloat/multilingual-e5-base
+  - XLM-RoBERTa ベース、SentencePiece トークナイザー
+  - MeCab / fugashi に依存しないため Streamlit Cloud (Python 3.14) でも動作する
+  - 日本語を含む多言語テキストに対して高品質な埋め込みを生成する
 
 実装上の注意:
-  新しい sentence-transformers は BertJapaneseTokenizer の do_lower_case プロパティの
-  setter 非互換により日本語BERTモデルのロードに失敗する（Python 3.13/3.14 + 最新版で確認）。
-  そのため SentenceTransformer クラスを使わず transformers を直接使って
-  mean-pooling + L2 正規化で同等の embedding を計算する。
-  また transformers のトップレベルインポートは Streamlit 起動時の
-  モジュールスキャンが torchvision を要求して segfault を起こすため遅延インポートする。
+  transformers のトップレベルインポートは Streamlit 起動時のモジュールスキャンが
+  torchvision を要求して segfault を起こすため遅延インポートする。
 """
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import numpy as np
 from scipy.stats import norm
 
-MODEL_NAME = "cl-nagoya/sup-simcse-ja-base"
+MODEL_NAME = "intfloat/multilingual-e5-base"
 _tokenizer = None
 _model = None
 
@@ -28,10 +26,6 @@ _model = None
 def _get_model():
     global _tokenizer, _model
     if _model is None:
-        # BertJapaneseTokenizer は内部で fugashi.Tagger を呼ぶが、
-        # ipadic は GenericTagger でないと動作しないため事前にパッチする。
-        import fugashi
-        fugashi.Tagger = fugashi.GenericTagger
         from transformers import AutoTokenizer, AutoModel
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
         _model = AutoModel.from_pretrained(MODEL_NAME)
